@@ -1,0 +1,139 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: maven silicon
+// Engineer: Abhishek Pattnayak
+// 
+// Create Date: 04/04/2024 12:25:48 PM
+// Design Name: Register Block
+// Module Name: router_reg
+// Project Name: 1x3 router
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+//               clock---->|             |
+//              resetn---->|             |------> parity_done
+//           pkt_valid---->|             |
+//      data_in(8-bits)--->|             |----> low_packet_valid
+//          fifo_full----->|             |
+//         rst_int_reg---->|  REGISTER   |
+//          detect_add---->|             |----> err(error)
+//            ld_state---->|             |
+//           laf_state---->|             |----> dout(8-bit)
+//          full_state --->|             |
+//           lfd_state --->|             |
+
+
+module router_reg(clk,rstn,pkt_valid,data_in,fifo_full,detect_add,
+                  ld_state,laf_state,full_state,lfd_state,rst_int_reg,err,
+                  parity_done,low_packet_valid,dout);
+                  
+input clk,rstn,pkt_valid,fifo_full,detect_add,ld_state,laf_state,full_state,lfd_state,rst_int_reg;
+input [7:0]data_in;
+output reg err,parity_done,low_packet_valid;
+output reg [7:0]dout;
+
+//internal register
+reg [7:0] full_state_byte;
+reg [7:0] pkt_parity;
+reg [7:0] first_byte;
+reg [7:0] parity;
+
+//parity done logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            parity_done <= 1'b0;
+        else if((ld_state && !fifo_full && !pkt_valid) || (laf_state && !parity_done && low_packet_valid))
+            parity_done <= 1'b1;
+        else if(detect_add)
+            parity_done <= 1'b0;
+    end                               
+   
+//Low_packet_valid logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            low_packet_valid <= 1'b0;
+        else if(ld_state == 1 && pkt_valid ==0)
+            low_packet_valid<=1'b1; 
+        else if(rst_int_reg)
+            low_packet_valid <= 1'b0;
+    end 
+    
+//register dout logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            begin   
+                dout<=8'h00;
+                first_byte <= 8'h00;
+                full_state_byte <= 8'h00;
+            end 
+        else
+            begin
+                if(detect_add && pkt_valid==1 && data_in[1:0] != 2'b11)
+                   first_byte <= data_in;
+                else if(lfd_state)
+                    dout<=first_byte;
+                else if(ld_state && !fifo_full)
+                begin
+                    dout <= data_in;    
+                end         
+           end
+   end 
+                       
+//internal parity logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            parity<=8'h00;
+        else
+            begin
+                if(detect_add)
+                    parity <= 8'h00;
+                else if(lfd_state)
+                    begin
+                        parity <= parity^first_byte;
+                    end 
+                else if(ld_state && !full_state && pkt_valid)
+                    parity <= parity^data_in;
+            end 
+    end 
+    
+//packet parity logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            begin
+                pkt_parity <= 8'h00;
+            end 
+        else if(detect_add)
+            begin
+                pkt_parity <= 8'h00;
+            end 
+        else if((ld_state && !pkt_valid && !fifo_full) || (laf_state && !parity_done && low_packet_valid))
+            begin
+                pkt_parity <= data_in;
+            end 
+   end 
+   
+//error logic
+always@(posedge clk)
+    begin
+        if(!rstn)
+            err<=1'b0;
+        else if(!parity_done)
+            err <= 1'b0;
+        else if(pkt_parity!=parity)
+            err<=1'b1;
+    end                                          
+                                                    
+endmodule
