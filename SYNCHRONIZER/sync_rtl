@@ -1,0 +1,212 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: Maven Silicon
+// Engineer: Abhishek Pattnayak
+// 
+// Create Date: 03/31/2024 03:27:49 PM
+// Design Name: Maven Silicon
+// Module Name: synchronizer RTL
+// Project Name: router synchronizer
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+//      detect address---->|             |-------> write_enb(3-bits)
+//      data_in(2-bit)---->|             |-------> fifo_full
+//       write_enb_reg---->|             |<------empty_0
+//              resetn---->|synchronizer |<------empty_1
+//               clock---->|             |<------empty_2
+//      <---valid_out_0----|             |----> soft_rst_0
+//      <---valid_out_1----|             |----> soft_rst_1
+//      <---valid_out_2----|             |----> soft_rst_2
+//          read_enb_0---->|             |<---- full_0
+//          read_enb_1---->|             |<---- full_1
+//          read_enb_2---->|             |<----full_2
+
+
+
+module synchronizer(clk , rstn , soft_rst_0 , soft_rst_1 , soft_rst_2 , detect_addr , data_in ,wr_enb_reg  , 
+valid_out_0 , valid_out_1 , valid_out_2 ,  wr_enb, fifo_full , empty_0 , empty_1 , empty_2 , 
+read_enb_0 , read_enb_1 , read_enb_2 , full_0 , full_1 , full_2 ); 
+
+
+input clk , rstn , read_enb_0 , read_enb_1 , read_enb_2 , full_0 , full_1 , full_2 ;
+output reg [2:0] wr_enb ;
+output reg  fifo_full ;
+input [1:0]data_in ;
+input detect_addr ;
+input wr_enb_reg ; 
+output reg  soft_rst_0 , soft_rst_1 , soft_rst_2;
+output valid_out_0 , valid_out_1 , valid_out_2 ;
+input  empty_0 , empty_1 , empty_2 ;
+
+reg [1:0] int_reg_addr; // internal register address to store the data_in value
+
+ always@(posedge clk)
+ begin
+    if(!rstn)
+        int_reg_addr <= 2'b11;
+    else
+        if(detect_addr)
+            int_reg_addr<=data_in;
+        else
+            int_reg_addr<=int_reg_addr;        
+ end 
+
+//one hot encoding of internal variable whenever write enable reg is high to generate 3 bit write enable 
+
+always@(posedge clk)
+begin
+    if(!rstn)
+        wr_enb<=3'b000;
+    else
+        if(wr_enb_reg)
+            begin
+            case(int_reg_addr)
+                2'b00 : wr_enb = 3'b001;
+                2'b01 : wr_enb = 3'b010;
+                2'b10 : wr_enb = 3'b100;
+                 default : wr_enb = 3'b000;
+            endcase 
+            end
+         else
+            wr_enb<=wr_enb;         
+end 
+
+//logic for fifo full
+
+always@(posedge clk)
+begin
+    if(!rstn)
+        fifo_full<=1'b0; 
+    else
+        if(wr_enb_reg)
+            case(int_reg_addr)
+                2'b00 : fifo_full = full_0;
+                2'b01 : fifo_full = full_1;
+                2'b10 : fifo_full = full_2;
+                default : fifo_full =  1'bz;
+            endcase 
+end 
+
+// empty signals are output from fifo and input to synchronizer
+//these empty signals are used to generate valid_out signals
+//whwenve there is a valid byte available in the memory the valid out goes high which is negation of empty signal
+//once in fifo reset is called then full=0,empty=1. once writing happens empty=1
+assign valid_out_0 = ~empty_0 ;
+assign valid_out_1 = ~empty_1 ;
+assign valid_out_2 = ~empty_2 ;
+
+// soft reset are used to reset the fifo for the  memory for the packet for which read is not generated between 30 clock cycles
+//count 30 cycles and make soft reset high
+
+reg [4:0] count0,count1,count2;
+
+always@(posedge clk)
+    begin
+        if(!rstn)
+            begin
+                count0<=0;
+                soft_rst_0<=0;
+            end    
+        else if(~valid_out_0)
+                begin
+                    count0<=0;
+                    soft_rst_0<=0;
+                end 
+        else if(read_enb_0)
+            begin
+                count0<=0;
+                soft_rst_0<=0;
+            end               
+        else
+            begin
+                if(count0==29)
+                    begin
+                        count0<=0;
+                        soft_rst_0<=1;
+                    end    
+                else
+                    begin
+                        count0<=count0+1;
+                        soft_rst_0<=0;   
+                    end
+             end 
+  end 
+  
+                  
+ always@(posedge clk)
+    begin
+        if(!rstn)
+            begin
+                count1<=0;
+                soft_rst_1<=0;
+            end    
+        else if(~valid_out_1)
+                begin
+                    count1<=0;
+                    soft_rst_1<=0;
+                end 
+        else if(read_enb_1)
+            begin
+                count1<=0;
+                soft_rst_1<=0;
+            end               
+        else
+            begin
+                if(count1==29)
+                    begin
+                        count1<=0;
+                        soft_rst_1<=1;
+                    end    
+                else
+                    begin
+                        count1<=count1+1;
+                        soft_rst_1<=0;   
+                    end
+             end 
+  end                                          
+
+always@(posedge clk)
+    begin
+        if(!rstn)
+            begin
+                count2<=0;
+                soft_rst_2<=0;
+            end    
+        else if(~valid_out_2)
+                begin
+                    count2<=0;
+                    soft_rst_2<=0;
+                end 
+        else if(read_enb_2)
+            begin
+                count2<=0;
+                soft_rst_2<=0;
+            end               
+        else
+            begin
+                if(count2==29)
+                    begin
+                        count2<=0;
+                        soft_rst_2<=1;
+                    end    
+                else
+                    begin
+                        count2<=count2+1;
+                        soft_rst_2<=0;   
+                    end
+             end 
+  end 
+                     
+
+endmodule
