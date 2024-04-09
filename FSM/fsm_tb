@@ -1,0 +1,175 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: Maven Silicon
+// Engineer: Abhishek Pattanayak
+// 
+// Create Date: 04/07/2024 08:09:54 PM
+// Design Name: FSM for router 1x3 testbench
+// Module Name: router_fsm_tb
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module router_fsm_tb();
+
+reg clk,rstn,pkt_valid,fifo_full,fifo_empty_0,fifo_empty_1,fifo_empty_2,soft_reset_0,soft_reset_1,soft_reset_2,parity_done,low_packet_valid;
+reg [1:0] data_in;
+wire write_enb_reg,detect_add,ld_state,laf_state,lfd_state,full_state,rst_int_reg,busy;
+
+parameter cycle=10;
+
+router_fsm DUT(clk,rstn,pkt_valid,data_in,fifo_full,fifo_empty_0,fifo_empty_1,fifo_empty_2,soft_reset_0,soft_reset_1,soft_reset_2,parity_done,low_packet_valid,write_enb_reg,detect_add,ld_state,laf_state,lfd_state,full_state,rst_int_reg,busy);
+  
+   initial
+   begin
+    clk=1'b1;
+    forever #cycle clk = ~clk;
+   end
+
+   task initialize;
+   begin
+   {pkt_valid,fifo_empty_0,fifo_empty_1,fifo_empty_2,fifo_full,parity_done,low_packet_valid}=0;
+   end
+   endtask
+
+   task rst;
+   begin
+   @(negedge clk)
+    rstn=1'b0;
+   @(negedge clk)
+    rstn=1'b1;
+   end
+   endtask
+
+//task-1 DA-LFD-LD-LP-CPE-DA
+   task t1;
+        begin
+            @(negedge clk)  // LFD
+            begin
+            pkt_valid<=1;
+            data_in[1:0]<=0;
+            fifo_empty_0<=1;
+        end              
+   @(negedge clk) //LD
+   @(negedge clk) //LP
+    begin
+        fifo_full<=0;
+        pkt_valid<=0;
+    end
+   @(negedge clk) // CPE
+   @(negedge clk) // DA
+   fifo_full<=0;
+   end
+   endtask
+
+ //task-2 DA-LFD-LD-FFS-LAF-LP-CPE-DA
+   task t2;
+    begin
+        @(negedge clk)//LFD
+        begin
+        pkt_valid<=1;
+        data_in[1:0]<=1;
+        fifo_empty_1<=1;
+    end
+   @(negedge clk)//LD
+   @(negedge clk)//FFS
+    fifo_full<=1;
+   @(negedge clk)//LAF
+    fifo_full<=0;
+   @(negedge clk)//LP
+    begin
+        parity_done<=0;
+        low_packet_valid<=1;
+    end
+   @(negedge clk)//CPE
+   @(negedge clk)//DA
+   fifo_full<=0;
+   end
+   endtask
+
+//task-3 DA-LFD-LD-FFS-LAF-LD-LP-CPE-DA
+   task t3;
+    begin
+        @(negedge clk) //LFD
+        begin
+        pkt_valid<=1;
+        data_in[1:0]<=2;
+        fifo_empty_2<=1;
+    end
+   @(negedge clk) //LD
+   @(negedge clk) // FFS
+    fifo_full<=1;
+   @(negedge clk) // LAF
+    fifo_full<=0;
+   @(negedge clk)  // LD
+    begin
+        low_packet_valid<=0;
+	    parity_done<=0;
+    end  
+   @(negedge clk)// LP
+    begin
+    fifo_full<=0;
+    pkt_valid<=0;
+    end
+   @(negedge clk) // CPE
+   @(negedge clk) // DA
+   fifo_full<=0;
+   end
+   endtask
+   
+   
+    //task-4 DA-LFD-LD-LP-CPE-FFS-LAF-DA
+   task t4;
+    begin
+        @(negedge clk)  // LFD
+        begin
+        pkt_valid<=1;
+        data_in[1:0]<=0;
+        fifo_empty_0<=1;
+    end        
+   @(negedge clk)   // LD
+   @(negedge clk)   // LP
+    begin
+        fifo_full<=0;
+        pkt_valid<=0;
+    end
+   @(negedge clk)   // CPE 
+   @(negedge clk)   // FFS
+    fifo_full<=1;
+   @(negedge clk)   // LAF
+    fifo_full<=0;
+  @(negedge clk)    // DA
+   parity_done=1;
+   end
+ endtask
+
+
+   initial
+   begin
+   rst;
+   initialize;
+  
+    t1;
+	rst;
+	#30
+    t2;
+	rst;
+	#30
+	t3;
+	rst;
+	#30
+    t4;
+	rst;
+   
+   end
+endmodule
