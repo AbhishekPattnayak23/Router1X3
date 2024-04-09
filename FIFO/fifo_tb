@@ -1,0 +1,121 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: Maven Silicon
+// Engineer: Abhishek Pattnayak
+// 
+// Create Date: 04/07/2024 11:50:11 PM
+// Design Name: FIFO testbench
+// Module Name: router_fifo_tb
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module router_fifo_tb();
+reg [7:0] din;
+reg clk,rstn,we,re,lfd_state,soft_rst;
+wire [7:0] dout;
+wire empty,full;
+
+
+router_fifo DUT(clk,rstn,we,re,din,lfd_state,soft_rst,empty,full,dout);
+
+initial
+    begin
+        clk=1'b0;
+        forever
+        #5
+        clk=~clk;
+     end 
+     
+task reset;
+    begin
+        @(negedge clk)
+            rstn=1'b0;     //active low reset, so at o goes high
+        @(negedge clk)
+            rstn=1'b1;
+     end 
+ endtask   
+ 
+task soft_reset;
+    begin 
+        @(negedge clk)
+            soft_rst=1'b1;
+        @(negedge clk)
+            soft_rst=1'b0;
+    end 
+endtask 
+
+
+
+//----------------------------Initialization Task Block------------------------------- 
+
+task initialize;
+    begin
+        we=0;
+        re=0; 
+        din=0;
+        soft_rst=0;
+        lfd_state=0;             
+    end
+endtask
+
+//---------------------------Read & Write Task Block----------------------------------
+
+
+task write;
+reg [7:0] payload_data,parity,header;
+reg [5:0] payload_len;
+reg [1:0] addr;
+
+integer m;
+begin
+    @(negedge clk)
+        payload_len=6'd15;
+        addr=2'b01;
+        header={payload_len,addr};
+        din=header;
+        lfd_state=1;
+        we=1;
+        for(m=0;m<payload_len-1;m=m+1)
+            begin
+                @(negedge clk)
+                    lfd_state=0;
+                    payload_data={$random}%256;
+                    din=payload_data;
+            end 
+    @(negedge clk)
+    parity={$random}%16;
+    din=parity;
+    end
+endtask
+
+ 
+initial
+    begin
+        reset();
+        soft_reset;
+        write;
+       // repeat(2)
+        @(negedge clk);
+            re=1;
+            we=0;
+        @(negedge clk)
+        wait(empty)
+        @(negedge clk)
+        re=0;
+        #100 
+        $finish;
+    end
+               
+endmodule
+
